@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# Define paths
+strDNSFile="/etc/resolv.conf"
+strWhitelist="${HOME}/bin/dns_whitelist"
+strLogfile="${HOME}/bin/dnslog"
+
+# Vars
+boAddressLine=0
+strAddress=""
+boExists=0
+boFileOk=1
+strPid=""
+iFreq=2
+strWebApps=""
+
+# Check for logfile
+if [ ! -f "${strLogfile}" ]; then
+    touch "${strLogfile}"
+    echo "$(date "+%Y%m%d-%H:%M:%S") Looking for log file ${strLogfile}." | tee -a "${strLogfile}"
+    echo "$(date "+%Y%m%d-%H:%M:%S") Lofile not found, creating ${strLogfile}." | tee -a "${strLogfile}"
+else
+    echo "$(date "+%Y%m%d-%H:%M:%S") Looking for log file ${strLogfile}." | tee -a "${strLogfile}"
+    echo "$(date "+%Y%m%d-%H:%M:%S") ${strLogfile} is already available." | tee -a "${strLogfile}"
+fi
+
+# Greet user
+echo "$(date "+%Y%m%d-%H:%M:%S") DNS check of ${strDNSFile} started by ${USER}." | tee -a "${strLogfile}"
+
+# Start loop
+while : ; do
+    boFileOk=1
+    strWebApps=""
+    # Read lines in resolv file one by one
+    while read line; do
+        # Does current line contain nameserver
+        boAddressLine=$(echo "${line}" | grep -c nameserver)
+        if [ "${boAddressLine}" -ge 1 ]; then
+            # Get address from entry
+            strAddress=$(echo "${line}" | cut -d" " -f 2)
+            echo "$(date "+%Y%m%d-%H:%M:%S") Checking entry ${strAddress}."
+            # Is address present in whitelist
+            boExists=$(grep -c "${strAddress}" "${strWhitelist}")
+            if [ "${boExists}" -eq 0 ]; then
+                echo "$(date "+%Y%m%d-%H:%M:%S") WARNING!!! ${strAddress} NOT present in whitelist." | tee -a "${strLogfile}"            
+                boFileOk=0
+            else
+                echo "$(date "+%Y%m%d-%H:%M:%S") ${strAddress} present in whitelist."
+            fi
+        fi
+    done < "${strDNSFile}"
+
+    # Print/execute based on result
+    if [ "${boFileOk}" = "1" ]; then
+        echo "$(date "+%Y%m%d-%H:%M:%S") Check completed - ${strDNSFile} only contains safe DNS hosts."
+    else
+        echo "$(date "+%Y%m%d-%H:%M:%S") Check completed - ${strDNSFile} contains unsafe DNS hosts." | tee -a "${strLogfile}"
+        strWebApps="$(ps -e | grep -e transmission -e qbittorrent -e firefox -e chrome)"
+        if [ -n "${strWebApps}" ]; then
+            pkill transmission
+            pkill qbittorrent
+            pkill firefox
+            pkill chrome
+            zenity --notification --text="$(date "+%Y%m%d-%H:%M:%S") DNS file ${strDNSFile} is unsafe. Killing applications"
+        fi
+    fi
+
+    # Pause until next cycle
+    sleep ${iFreq}
+done
+    
+# Graceful exit (which will never happen)
+exit 0
